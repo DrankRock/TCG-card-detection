@@ -7,11 +7,12 @@ import threading
 from threading import Thread
 
 import cv2
-import numpy
+import numpy as np
 import pytesseract
 
 import Linguist
 
+NORMALIZE = False
 
 def tesseract_location(root):
     """
@@ -93,11 +94,11 @@ class VideoStream:
             Sets the self.stopped attribute as True and kills the VideoCapture stream read
     """
 
-    def __init__(self, src=0):
+    def __init__(self, src=0, resize=1):
         self.stream = cv2.VideoCapture(src)
-        cv2.normalize(stream, )
         (self.grabbed, self.frame) = self.stream.read()
-        cv2.normalize(self.frame, self.frame, 0, 255, cv2.NORM_MINMAX)
+        self.normalize()
+        self.resize(resize)
         self.stopped = False
 
     def start(self):
@@ -115,7 +116,8 @@ class VideoStream:
         """
         while not self.stopped:
             (self.grabbed, self.frame) = self.stream.read()
-            cv2.normalize(self.frame, self.frame, 0, 255, cv2.NORM_MINMAX)
+            self.normalize()
+            self.stream.set(cv2.CAP_PROP_FOCUS, 50)
 
     def get_video_dimensions(self):
         """
@@ -126,6 +128,18 @@ class VideoStream:
         width = self.stream.get(cv2.CAP_PROP_FRAME_WIDTH)
         height = self.stream.get(cv2.CAP_PROP_FRAME_HEIGHT)
         return int(width), int(height)
+
+    def normalize(self, contrast=1, brightness=50):
+        if NORMALIZE:
+            self.frame[:, :, 2] = np.clip(contrast * self.frame[:, :, 2] + brightness, 0, 255)
+            self.frame = cv2.cvtColor(self.frame, cv2.COLOR_HSV2BGR)
+
+    def resize(self, factor=1):
+        width, height = self.get_video_dimensions()
+        self.stream.set(cv2.CAP_PROP_FRAME_WIDTH, width*factor)
+        self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT, height*factor)
+        print("width : {}, height : {}".format(width, height))
+        # cv2.resize(self.frame,    )
 
     def stop_process(self):
         """
@@ -308,7 +322,7 @@ def put_ocr_boxes(boxes, frame, height, crop_width=0, crop_height=0, view_mode=1
 
     :param confidence_threshold: threshold before showing to screen
     :param boxes: output tuple from tesseract image_to_data() containing text location and text string
-    :param numpy.ndarray frame: CV2 display frame destination
+    :param np.ndarray frame: CV2 display frame destination
     :param height: Frame height
     :param crop_width: (Default 0) Horizontal frame crop amount if OCR was performed on a cropped frame
     :param crop_height: (Default 0) Vertical frame crop amount if OCR was performed on a cropped frame
@@ -344,11 +358,11 @@ def put_ocr_boxes(boxes, frame, height, crop_width=0, crop_height=0, view_mode=1
     return frame, text
 
 
-def put_crop_box(frame: numpy.ndarray, width: int, height: int, crop_width: int, crop_height: int):
+def put_crop_box(frame: np.ndarray, width: int, height: int, crop_width: int, crop_height: int):
     """
     Simply draws a rectangle over the frame with specified height and width to show a crop zone
 
-    :param numpy.ndarray frame: CV2 display frame for crop-box destination
+    :param np.ndarray frame: CV2 display frame for crop-box destination
     :param int width: Width of the CV2 frame
     :param int height: Height of the CV2 frame
     :param int crop_width: Horizontal crop amount
@@ -361,7 +375,7 @@ def put_crop_box(frame: numpy.ndarray, width: int, height: int, crop_width: int,
     return frame
 
 
-def put_rate(frame: numpy.ndarray, rate: float) -> numpy.ndarray:
+def put_rate(frame: np.ndarray, rate: float) -> np.ndarray:
     """
     Places text showing the iterations per second in the CV2 display loop.
 
@@ -378,11 +392,11 @@ def put_rate(frame: numpy.ndarray, rate: float) -> numpy.ndarray:
     return frame
 
 
-def put_language(frame: numpy.ndarray, language_string: str) -> numpy.ndarray:
+def put_language(frame: np.ndarray, language_string: str) -> np.ndarray:
     """
     Places text showing the active language(s) in current OCR display
 
-    :param numpy.ndarray frame: CV2 display frame for language name destination
+    :param np.ndarray frame: CV2 display frame for language name destination
     :param str language_string: String containing the display language name(s)
 
     :returns: CV2 display frame with language name added
@@ -392,14 +406,16 @@ def put_language(frame: numpy.ndarray, language_string: str) -> numpy.ndarray:
     return frame
 
 
-def ocr_stream(crop: list[int, int], source: int = 0, view_mode: int = 1, language=None, confidence_threshold=75):
+def ocr_stream(crop: list[int, int], source: int = 0, view_mode: int = 1, language=None, confidence_threshold=75,
+               resize_factor=1):
     """
     Begins the video stream and text OCR in two threads, then shows the video in a CV2 frame with the OCR
     boxes overlaid in real-time.
 
     When viewing the real-time video stream, push 'c' to capture a still image, push 'q' to quit the view session
 
-    :param threshold: double between 0 and 1, confidence threshold before showing on screen
+    :param resize_factor: factor of resizing for camera display
+    :param confidence_threshold: double between 0 and 1, confidence threshold before showing on screen
     :param list[int, int] crop: A two-element list with width, height crop amount in pixels. [0, 0] indicates no crop
     :param source: SRC video source (defaults to 0) for CV2 video capture.
     :param int view_mode: There are 4 possible view modes that control how the OCR boxes are drawn over text:
@@ -418,7 +434,7 @@ def ocr_stream(crop: list[int, int], source: int = 0, view_mode: int = 1, langua
     """
     captures = 0  # Number of still image captures during view session
 
-    video_stream = VideoStream(source).start()  # Starts reading the video stream in dedicated thread
+    video_stream = VideoStream(source, resize_factor).start()  # Starts reading the video stream in dedicated thread
     img_wi, img_hi = video_stream.get_video_dimensions()
 
     if crop is None:  # Setting crop area and confirming valid parameters

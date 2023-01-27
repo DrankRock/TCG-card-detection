@@ -49,6 +49,8 @@ def main():
                         default=0, type=int)
     parser.add_argument("-cf", "--confidence", help="confidence threshold to show the text on screen (default=0.75)",
                         default=0.75, type=int)
+    parser.add_argument("-r", "--resize", help="factor of resize for your webcam (default = 1)",
+                        default=1, type=int)
 
     args = parser.parse_args()
 
@@ -61,7 +63,7 @@ def main():
     # This is where OCR is started...
     OCR.tesseract_location(args.tess_path)
     OCR.ocr_stream(view_mode=args.view_mode, source=args.src, crop=args.crop, language=args.language,
-                   confidence_threshold=args.confidence)
+                   confidence_threshold=args.confidence, resize_factor=args.resize)
 
 
 if __name__ == '__main__':
