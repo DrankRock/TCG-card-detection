@@ -47,6 +47,8 @@ def main():
                         action="store_true")
     parser.add_argument("-s", "--src", help="SRC video source for video capture",
                         default=0, type=int)
+    parser.add_argument("-cf", "--confidence", help="confidence threshold to show the text on screen (default=0.75)",
+                        default=0.75, type=int)
 
     args = parser.parse_args()
 
@@ -58,7 +60,8 @@ def main():
 
     # This is where OCR is started...
     OCR.tesseract_location(args.tess_path)
-    OCR.ocr_stream(view_mode=args.view_mode, source=args.src, crop=args.crop, language=args.language)
+    OCR.ocr_stream(view_mode=args.view_mode, source=args.src, crop=args.crop, language=args.language,
+                   confidence_threshold=args.confidence)
 
 
 if __name__ == '__main__':

@@ -24,8 +24,11 @@ def tesseract_location(root):
     try:
         pytesseract.pytesseract.tesseract_cmd = root
     except FileNotFoundError:
-        print("Please double check the Tesseract file directory or ensure it's installed.")
-        sys.exit(1)
+        try:
+            pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+        except Exception as exc:
+            print("Please double check the Tesseract file directory or ensure it's installed.\nException Caught : ", exc)
+            sys.exit(1)
 
 
 class RateCounter:
@@ -92,7 +95,9 @@ class VideoStream:
 
     def __init__(self, src=0):
         self.stream = cv2.VideoCapture(src)
+        cv2.normalize(stream, )
         (self.grabbed, self.frame) = self.stream.read()
+        cv2.normalize(self.frame, self.frame, 0, 255, cv2.NORM_MINMAX)
         self.stopped = False
 
     def start(self):
@@ -110,6 +115,7 @@ class VideoStream:
         """
         while not self.stopped:
             (self.grabbed, self.frame) = self.stream.read()
+            cv2.normalize(self.frame, self.frame, 0, 255, cv2.NORM_MINMAX)
 
     def get_video_dimensions(self):
         """
@@ -252,7 +258,7 @@ def capture_image(frame, captures=0):
     return captures
 
 
-def views(mode: int, confidence: int):
+def views(mode: int, confidence: int, confidence_threshold: int):
     """
     View modes changes the style of text-boxing in OCR.
 
@@ -264,6 +270,7 @@ def views(mode: int, confidence: int):
 
     View mode 4: Draws a box around detected text regardless of confidence
 
+    :param confidence_threshold: confidence before showing on screen
     :param mode: view mode
     :param confidence: The confidence of OCR text detection
 
@@ -273,7 +280,7 @@ def views(mode: int, confidence: int):
     color = None
 
     if mode == 1:
-        conf_thresh = 75  # Only shows boxes with confidence greater than 75
+        conf_thresh = confidence_threshold  # Only shows boxes with confidence greater than 75
         color = (0, 255, 0)  # Green
 
     if mode == 2:
@@ -294,11 +301,12 @@ def views(mode: int, confidence: int):
     return conf_thresh, color
 
 
-def put_ocr_boxes(boxes, frame, height, crop_width=0, crop_height=0, view_mode=1):
+def put_ocr_boxes(boxes, frame, height, crop_width=0, crop_height=0, view_mode=1, confidence_threshold=75):
     """
     Draws text bounding boxes at tesseract-specified text location. Also displays compatible (ascii) detected text
     Note: ONLY works with the output from tesseract image_to_data(); image_to_boxes() uses a different output format
 
+    :param confidence_threshold: threshold before showing to screen
     :param boxes: output tuple from tesseract image_to_data() containing text location and text string
     :param numpy.ndarray frame: CV2 display frame destination
     :param height: Frame height
@@ -324,7 +332,7 @@ def put_ocr_boxes(boxes, frame, height, crop_width=0, crop_height=0, view_mode=1
                     x += crop_width  # If tesseract was performed on a cropped image we need to 'convert' to full frame
                     y += crop_height
 
-                    conf_thresh, color = views(view_mode, int(conf))
+                    conf_thresh, color = views(view_mode, int(conf), confidence_threshold)
 
                     if int(conf) > conf_thresh:
                         cv2.rectangle(frame, (x, y), (w + x, h + y), color, thickness=1)
@@ -384,13 +392,14 @@ def put_language(frame: numpy.ndarray, language_string: str) -> numpy.ndarray:
     return frame
 
 
-def ocr_stream(crop: list[int, int], source: int = 0, view_mode: int = 1, language=None):
+def ocr_stream(crop: list[int, int], source: int = 0, view_mode: int = 1, language=None, confidence_threshold=75):
     """
     Begins the video stream and text OCR in two threads, then shows the video in a CV2 frame with the OCR
     boxes overlaid in real-time.
 
     When viewing the real-time video stream, push 'c' to capture a still image, push 'q' to quit the view session
 
+    :param threshold: double between 0 and 1, confidence threshold before showing on screen
     :param list[int, int] crop: A two-element list with width, height crop amount in pixels. [0, 0] indicates no crop
     :param source: SRC video source (defaults to 0) for CV2 video capture.
     :param int view_mode: There are 4 possible view modes that control how the OCR boxes are drawn over text:
@@ -423,6 +432,7 @@ def ocr_stream(crop: list[int, int], source: int = 0, view_mode: int = 1, langua
     ocr = OCR().start()  # Starts optical character recognition in dedicated thread
     print("OCR stream started")
     print("Active threads: {}".format(threading.activeCount()))
+    print("Confidence Threshold : {}".format(confidence_threshold))
     ocr.set_exchange(video_stream)
     ocr.set_language(language)
     ocr.set_dimensions(img_wi, img_hi, cropx, cropy)  # Tells the OCR class where to perform OCR (if img is cropped)
@@ -450,7 +460,8 @@ def ocr_stream(crop: list[int, int], source: int = 0, view_mode: int = 1, langua
         frame = put_language(frame, lang_name)
         frame = put_crop_box(frame, img_wi, img_hi, cropx, cropy)
         frame, text = put_ocr_boxes(ocr.boxes, frame, img_hi,
-                                    crop_width=cropx, crop_height=cropy, view_mode=view_mode)
+                                    crop_width=cropx, crop_height=cropy, view_mode=view_mode,
+                                    confidence_threshold=confidence_threshold)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         # Photo capture:
